@@ -9,7 +9,45 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+// Configure CORS for local dev and production frontend deployments
+const configuredOrigins = (process.env.FRONTEND_URL || process.env.CLIENT_URL || '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+const defaultOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+];
+
+const allowedOrigins = [...new Set([...configuredOrigins, ...defaultOrigins])];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser tools (e.g. Postman, curl, health checks) or requests without Origin header
+    if (!origin) return callback(null, true);
+
+    const normalizedOrigin = origin.replace(/\/+$/, '');
+
+    // In local development or if FRONTEND_URL is not set, allow all origins
+    if (process.env.NODE_ENV !== 'production' || configuredOrigins.length === 0) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(normalizedOrigin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Ensure DB is connected before processing requests
