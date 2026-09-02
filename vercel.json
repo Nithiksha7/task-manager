@@ -24,7 +24,7 @@
       }
     },
     {
-      "source": "/(.*\\..*)",
+      "source": "/:file(.*\\.(?:mp4|jpg|jpeg|png|svg|ico|json|js|css|woff2?|ttf|txt|webp))",
       "destination": {
         "service": "frontend"
       }
