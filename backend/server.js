@@ -1,6 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
@@ -66,9 +68,12 @@ app.use(async (req, res, next) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/tasks', taskRoutes);
+app.use('/auth', authRoutes);
 
-app.get('/api/health', (req, res) => {
+app.use('/api/tasks', taskRoutes);
+app.use('/tasks', taskRoutes);
+
+app.get(['/api/health', '/health', '/'], (req, res) => {
   res.json({ status: 'ok', message: 'Task Manager API Server Running' });
 });
 
@@ -82,8 +87,12 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Only listen when running standalone / local dev server (not on Vercel serverless)
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+// Avoid starting persistent server on Vercel / serverless environments or when imported,
+// but start automatically when executed directly (e.g. node server.js / npm start / npm run dev)
+const isDirectRun = Boolean(process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]));
+const isVercel = Boolean(process.env.VERCEL || process.env.NOW_REGION);
+
+if (isDirectRun && !isVercel) {
   app.listen(PORT, () => {
     console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   });
