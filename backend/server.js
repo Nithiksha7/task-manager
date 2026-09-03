@@ -18,6 +18,7 @@ const configuredOrigins = (process.env.FRONTEND_URL || process.env.CLIENT_URL ||
   .filter(Boolean);
 
 const defaultOrigins = [
+  'https://task-manager-frontend-red-two.vercel.app',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:3000',
@@ -26,33 +27,66 @@ const defaultOrigins = [
 
 const allowedOrigins = [...new Set([...configuredOrigins, ...defaultOrigins])];
 
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  const normalizedOrigin = origin.trim().replace(/\/+$/, '').toLowerCase();
+  if (allowedOrigins.some((o) => o.toLowerCase() === normalizedOrigin)) return true;
+  if (normalizedOrigin.endsWith('.vercel.app')) return true;
+  if (process.env.NODE_ENV !== 'production') return true;
+  return false;
+};
+
+// 1. Explicit CORS headers & instant OPTIONS preflight handler
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+  );
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  // If OPTIONS preflight, send 200 OK immediately without reaching DB or auth middleware
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  next();
+});
+
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow non-browser tools (e.g. Postman, curl, health checks) or requests without Origin header
-    if (!origin) return callback(null, true);
-
-    const normalizedOrigin = origin.replace(/\/+$/, '');
-
-    // In local development or if FRONTEND_URL is not set, allow all origins
-    if (process.env.NODE_ENV !== 'production' || configuredOrigins.length === 0) {
+    if (!origin || isOriginAllowed(origin)) {
       return callback(null, true);
     }
-
-    if (allowedOrigins.includes(normalizedOrigin)) {
-      return callback(null, true);
-    }
-
     return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Authorization'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false,
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
 
-// Ensure DB is connected before processing requests
+// Health check route (responds immediately for status and uptime monitors)
+app.get(['/api/health', '/health', '/'], (req, res) => {
+  res.json({ status: 'ok', message: 'Task Manager API Server Running' });
+});
+
+// Ensure DB is connected before processing data requests
 app.use(async (req, res, next) => {
   try {
     await connectDB();
@@ -72,10 +106,6 @@ app.use('/auth', authRoutes);
 
 app.use('/api/tasks', taskRoutes);
 app.use('/tasks', taskRoutes);
-
-app.get(['/api/health', '/health', '/'], (req, res) => {
-  res.json({ status: 'ok', message: 'Task Manager API Server Running' });
-});
 
 // Fallback error middleware
 app.use((err, req, res, next) => {
